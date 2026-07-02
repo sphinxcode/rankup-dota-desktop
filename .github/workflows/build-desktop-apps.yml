@@ -1,18 +1,12 @@
-# Rank Up Dota — desktop app builder (Pake / Tauri)
+# Rank Up Dota — desktop app builder (Pake CLI / Tauri)
 #
-# WHERE THIS GOES: this workflow belongs in a small PUBLIC GitHub repo (e.g.
-# `sphinxcode/rankup-dota-desktop`), at `.github/workflows/build-desktop-apps.yml`.
-# It only needs the live app URL — NOT the private source — because Pake wraps a URL.
-# Publishing to a PUBLIC repo's Releases makes the installers downloadable by anyone
-# (the main app is a private repo, whose Release assets are NOT publicly downloadable).
+# Belongs in the PUBLIC repo `sphinxcode/rankup-dota-desktop` at
+# `.github/workflows/build-desktop-apps.yml`. Builds native apps from the live URL and
+# publishes installers to that repo's public Releases; the app's Download modal links to
+# `releases/latest/download/RankUpDota-{windows.msi,macos.dmg,linux.deb}`.
 #
-# The app's Download modal links to:
-#   https://github.com/<owner>/rankup-dota-desktop/releases/latest/download/RankUpDota-windows.msi
-#   .../RankUpDota-macos.dmg
-#   .../RankUpDota-linux.deb
-#
-# RUN IT: Actions tab → "Build Desktop Apps" → Run workflow (pick a version like v0.1.0).
-# ~10-15 min; all three jobs publish to the same Release tag.
+# NOTE: uses the `pake-cli` npm package directly (not `uses: tw93/Pake@...`, whose repo
+# contains a symlink that breaks GitHub's action download).
 
 name: Build Desktop Apps
 on:
@@ -40,26 +34,50 @@ jobs:
           - os: macos-latest
             ext: dmg
             out: RankUpDota-macos.dmg
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             ext: deb
             out: RankUpDota-linux.deb
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build native app from URL (Pake)
-        uses: tw93/Pake@V3.12.0
+      - uses: actions/setup-node@v4
         with:
-          url: ${{ inputs.url }}
-          name: RankUpDota
-          width: '1400'
-          height: '900'
-          output-dir: dist
+          node-version: '22'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux build dependencies (Tauri)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup mold linker (Linux)
+        if: runner.os == 'Linux'
+        uses: rui314/setup-mold@v1
+
+      - name: Install pake-cli
+        run: npm install -g pake-cli
+
+      - name: Build native app (Linux/macOS)
+        if: runner.os != 'Windows'
+        timeout-minutes: 30
+        run: pake "${{ inputs.url }}" --name RankUpDota --width 1400 --height 900
+
+      - name: Build native app (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 30
+        shell: pwsh
+        run: pake "${{ inputs.url }}" --name RankUpDota --width 1400 --height 900
 
       - name: Rename to a stable asset name
         shell: bash
         run: |
-          f=$(ls dist/*.${{ matrix.ext }} | head -1)
+          f=$(ls *.${{ matrix.ext }} 2>/dev/null | head -1)
+          if [ -z "$f" ]; then echo "no .${{ matrix.ext }} produced:"; ls -la; exit 1; fi
           echo "Packaging $f -> ${{ matrix.out }}"
           cp "$f" "${{ matrix.out }}"
 
