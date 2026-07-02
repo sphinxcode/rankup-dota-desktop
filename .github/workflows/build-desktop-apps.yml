@@ -1,0 +1,72 @@
+# Rank Up Dota — desktop app builder (Pake / Tauri)
+#
+# WHERE THIS GOES: this workflow belongs in a small PUBLIC GitHub repo (e.g.
+# `sphinxcode/rankup-dota-desktop`), at `.github/workflows/build-desktop-apps.yml`.
+# It only needs the live app URL — NOT the private source — because Pake wraps a URL.
+# Publishing to a PUBLIC repo's Releases makes the installers downloadable by anyone
+# (the main app is a private repo, whose Release assets are NOT publicly downloadable).
+#
+# The app's Download modal links to:
+#   https://github.com/<owner>/rankup-dota-desktop/releases/latest/download/RankUpDota-windows.msi
+#   .../RankUpDota-macos.dmg
+#   .../RankUpDota-linux.deb
+#
+# RUN IT: Actions tab → "Build Desktop Apps" → Run workflow (pick a version like v0.1.0).
+# ~10-15 min; all three jobs publish to the same Release tag.
+
+name: Build Desktop Apps
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Live app URL to wrap
+        default: https://dota.sphinx.codes
+      version:
+        description: Release tag (e.g. v0.1.0)
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            ext: msi
+            out: RankUpDota-windows.msi
+          - os: macos-latest
+            ext: dmg
+            out: RankUpDota-macos.dmg
+          - os: ubuntu-latest
+            ext: deb
+            out: RankUpDota-linux.deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build native app from URL (Pake)
+        uses: tw93/Pake@master
+        with:
+          url: ${{ inputs.url }}
+          name: RankUpDota
+          width: '1400'
+          height: '900'
+          output-dir: dist
+
+      - name: Rename to a stable asset name
+        shell: bash
+        run: |
+          f=$(ls dist/*.${{ matrix.ext }} | head -1)
+          echo "Packaging $f -> ${{ matrix.out }}"
+          cp "$f" "${{ matrix.out }}"
+
+      - name: Publish to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Rank Up Dota ${{ inputs.version }}
+          files: ${{ matrix.out }}
+          fail_on_unmatched_files: true
