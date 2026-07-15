@@ -98,20 +98,33 @@ if (!app.requestSingleInstanceLock()) {
       } catch { /* vision unavailable — Phase 1 continues without draft detection */ }
     })();
 
-    let lastDetect = 0;
+    // Draft-read lifecycle, driven by GSI game_state so we only screenshot when it can help and
+    // stop as soon as the read settles — no endless polling.
+    //   - Capture only during the pre-game window (pick phase → strategy). Idle in-game / at menu.
+    //   - Stop once the detected lineup is STABLE (unchanged two reads running) — All Pick reveals
+    //     all heroes at once so it settles immediately; Captain's Mode keeps reading until picks
+    //     stop changing. A handful of screenshots per match, then nothing.
+    //   - Reset on each new match (re-entering the pre-game window).
+    let lastDetect = 0, lastState = '', lastSig = '', stableCount = 0, draftDone = false;
     const maybeReadDraft = (evt: BridgeSelfEvent) => {
-      // Pixel-check continuously across the ENTIRE draft/pre-game window (pick phase → strategy), so
-      // both lineups are read the instant they appear on screen, in any mode. Throttled; the web
-      // side diffs, so re-pushing the same picks (or an empty read while heroes are still hidden) is
-      // a harmless no-op.
       if (!detectDraftFn || !templates.length) return;
-      if (!evt.gameState || !PREGAME_STATES.includes(evt.gameState)) return;
+      const state = evt.gameState || '';
+      const inPregame = PREGAME_STATES.includes(state);
+      if (inPregame && !PREGAME_STATES.includes(lastState)) {
+        stableCount = 0; lastSig = ''; draftDone = false; lastDetect = 0; // fresh draft
+      }
+      lastState = state;
+      if (!inPregame || draftDone) return; // idle outside the draft, or already have a stable read
       const now = Date.now();
       if (now - lastDetect < 2500) return;
       lastDetect = now;
-      detectDraftFn(templates)
-        .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })
-        .catch(() => {});
+      detectDraftFn(templates).then((dets) => {
+        if (!dets.length) return;
+        relay(normalizeDraft(dets));
+        const sig = dets.map((d) => `${d.slot}${d.heroId}`).sort().join(',');
+        if (sig && sig === lastSig) { if (++stableCount >= 2) draftDone = true; } else stableCount = 0;
+        lastSig = sig;
+      }).catch(() => {});
     };
 
     http = startGsiHttp(token, (evt) => { relay(evt); maybeReadDraft(evt); });
