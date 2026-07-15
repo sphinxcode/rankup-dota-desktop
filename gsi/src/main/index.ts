@@ -86,7 +86,7 @@ if (!app.requestSingleInstanceLock()) {
     // so a native-module (sharp/screenshot-desktop) failure degrades to "no enemy detection" rather
     // than crashing the app.
     let templates: Template[] = [];
-    let detectDraftFn: ((t: Template[]) => Promise<Array<{ slot: 'ally' | 'enemy'; heroId: number }>>) | null = null;
+    let detectDraftFn: ((t: Template[], selfHeroId?: number | null) => Promise<Array<{ slot: 'ally' | 'enemy'; heroId: number }>>) | null = null;
     (async () => {
       try {
         const [{ loadTemplates }, { detectDraft }] = await Promise.all([
@@ -98,33 +98,28 @@ if (!app.requestSingleInstanceLock()) {
       } catch { /* vision unavailable — Phase 1 continues without draft detection */ }
     })();
 
-    // Draft-read lifecycle, driven by GSI game_state so we only screenshot when it can help and
-    // stop as soon as the read settles — no endless polling.
-    //   - Capture only during the pre-game window (pick phase → strategy). Idle in-game / at menu.
-    //   - Stop once the detected lineup is STABLE (unchanged two reads running) — All Pick reveals
-    //     all heroes at once so it settles immediately; Captain's Mode keeps reading until picks
-    //     stop changing. A handful of screenshots per match, then nothing.
+    // Draft-read lifecycle, driven by GSI game_state:
+    //   - Capture every 2.5s ONLY during the pre-game window (pick phase → strategy). Idle in-game /
+    //     at menu (zero screenshots), so resource use stays negligible.
+    //   - Keep reading through the WHOLE draft (picks trickle in; heroes are revealed at different
+    //     times per mode) — do NOT stop early. A per-match cap is just a safety backstop.
+    //   - Pass the GSI self hero so detectDraft can anchor which side is allied.
     //   - Reset on each new match (re-entering the pre-game window).
-    let lastDetect = 0, lastState = '', lastSig = '', stableCount = 0, draftDone = false;
+    let lastDetect = 0, lastState = '', reads = 0;
+    const MAX_READS = 80; // ~3+ minutes of draft; backstop only
     const maybeReadDraft = (evt: BridgeSelfEvent) => {
       if (!detectDraftFn || !templates.length) return;
       const state = evt.gameState || '';
       const inPregame = PREGAME_STATES.includes(state);
-      if (inPregame && !PREGAME_STATES.includes(lastState)) {
-        stableCount = 0; lastSig = ''; draftDone = false; lastDetect = 0; // fresh draft
-      }
+      if (inPregame && !PREGAME_STATES.includes(lastState)) { reads = 0; lastDetect = 0; } // fresh match
       lastState = state;
-      if (!inPregame || draftDone) return; // idle outside the draft, or already have a stable read
+      if (!inPregame || reads >= MAX_READS) return;
       const now = Date.now();
       if (now - lastDetect < 2500) return;
-      lastDetect = now;
-      detectDraftFn(templates).then((dets) => {
-        if (!dets.length) return;
-        relay(normalizeDraft(dets));
-        const sig = dets.map((d) => `${d.slot}${d.heroId}`).sort().join(',');
-        if (sig && sig === lastSig) { if (++stableCount >= 2) draftDone = true; } else stableCount = 0;
-        lastSig = sig;
-      }).catch(() => {});
+      lastDetect = now; reads++;
+      detectDraftFn(templates, evt.heroId)
+        .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })
+        .catch(() => {});
     };
 
     http = startGsiHttp(token, (evt) => { relay(evt); maybeReadDraft(evt); });

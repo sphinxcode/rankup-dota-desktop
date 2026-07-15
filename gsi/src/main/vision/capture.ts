@@ -13,13 +13,15 @@ import type { Detection } from '../../core/normalize.ts';
 // pitch. The strategy screen is identical across All Pick / Turbo / etc., so one calibration
 // covers all modes. Scaled proportionally for other 16:9 resolutions at runtime.
 const REF_W = 1920, REF_H = 1080;
-const ALLY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
-  slot: 'ally' as const, left: 196 + i * 127, top: 2, width: 110, height: 76,
+// Which SIDE is "yours" is not fixed — it depends on Radiant/Dire, so a player can be on the left
+// OR the right. We detect all 10, then use the GSI-known self hero to decide which side is allied.
+const LEFT_SLOTS = Array.from({ length: 5 }, (_, i) => ({
+  side: 'left' as const, left: 196 + i * 127, top: 2, width: 110, height: 76,
 }));
-const ENEMY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
-  slot: 'enemy' as const, left: 1100 + i * 127, top: 4, width: 116, height: 74,
+const RIGHT_SLOTS = Array.from({ length: 5 }, (_, i) => ({
+  side: 'right' as const, left: 1100 + i * 127, top: 4, width: 116, height: 74,
 }));
-const ALL_SLOTS = [...ALLY_SLOTS_1080, ...ENEMY_SLOTS_1080];
+const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS];
 
 /** Grab the primary screen as a PNG buffer. */
 export async function grabScreen(): Promise<Buffer> {
@@ -37,17 +39,19 @@ export async function regionDescriptor(png: Buffer, rect: { left: number; top: n
 }
 
 /**
- * Capture the screen once and read BOTH lineups (allies + enemies) from the strategy-screen top
- * bar. `templates` are per-hero descriptors (built from data/hero-summary.json images). Returns
- * only confident matches (others are dropped — a blank slot beats a wrong hero).
+ * Capture the screen once and read BOTH lineups from the strategy-screen top bar, then decide which
+ * side is allied using the GSI-known `selfHeroId`: whichever side your own hero is detected on is
+ * your team; the other side is the enemy. Falls back to left=ally only if your hero isn't matched.
+ * `templates` are per-hero descriptors. Returns only confident matches (a blank beats a wrong hero).
  */
-export async function detectDraft(templates: Template[]): Promise<Detection[]> {
+export async function detectDraft(templates: Template[], selfHeroId?: number | null): Promise<Detection[]> {
   if (!templates.length) return [];
   const png = await grabScreen();
   const meta = await sharp(png).metadata();
   const sx = (meta.width ?? REF_W) / REF_W;
   const sy = (meta.height ?? REF_H) / REF_H;
-  const out: Detection[] = [];
+
+  const raw: Array<{ side: 'left' | 'right'; heroId: number }> = [];
   for (const s of ALL_SLOTS) {
     const rect = {
       left: Math.round(s.left * sx), top: Math.round(s.top * sy),
@@ -56,8 +60,15 @@ export async function detectDraft(templates: Template[]): Promise<Detection[]> {
     try {
       const desc = await regionDescriptor(png, rect);
       const m = bestMatch(desc, templates); // spatial+histogram descriptor + ratio test (defaults)
-      if (m) out.push({ slot: s.slot, heroId: m.heroId });
+      if (m) raw.push({ side: s.side, heroId: m.heroId });
     } catch { /* skip this slot on any crop/decode error */ }
   }
-  return out;
+
+  // Anchor the allied side on your own hero (GSI ground truth); default left if not found.
+  let allySide: 'left' | 'right' = 'left';
+  if (selfHeroId != null) {
+    const mine = raw.find((r) => r.heroId === selfHeroId);
+    if (mine) allySide = mine.side;
+  }
+  return raw.map((r) => ({ slot: r.side === allySide ? 'ally' : 'enemy', heroId: r.heroId }));
 }
