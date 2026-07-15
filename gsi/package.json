@@ -1,11 +1,17 @@
 {
   "name": "rankup-dota-desktop-gsi",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Electron companion that reads Dota 2 via official GSI (+ Phase 2 screen portrait-matching) and streams live picks to the Rank Up Dota web app over a local WebSocket.",
-  "author": { "name": "Sphinx Code", "email": "developer@sphinx.codes" },
+  "author": {
+    "name": "Sphinx Code",
+    "email": "developer@sphinx.codes"
+  },
   "homepage": "https://rankupdota.com",
-  "repository": { "type": "git", "url": "https://github.com/sphinxcode/rankup-dota-desktop.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sphinxcode/rankup-dota-desktop.git"
+  },
   "type": "module",
   "main": "dist/main/index.cjs",
   "scripts": {

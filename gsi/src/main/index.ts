@@ -14,6 +14,11 @@ import path from 'node:path';
 import { installGsiConfig } from './gsi-cfg-install.ts';
 import { startGsiHttp } from './gsi-http.ts';
 import { startBridgeWs } from './bridge-ws.ts';
+import { normalizeDraft } from '../core/normalize.ts';
+import { STRATEGY_STATES, type BridgeSelfEvent } from '../core/bridge-types.ts';
+import type { Template } from '../core/match.ts';
+// Vision modules (sharp/screenshot-desktop native deps) are imported LAZILY below so that if those
+// native modules fail to load, Phase 1 (GSI hero detection) keeps working — Phase 2 just no-ops.
 
 const SITE_URL = process.env.RANKUP_SITE_URL || 'https://rankupdota.com';
 const token = randomUUID();
@@ -76,7 +81,38 @@ if (!app.requestSingleInstanceLock()) {
       bridge?.broadcast(evt);
       if (win && !win.isDestroyed()) win.webContents.send('bridge-event', evt);
     };
-    http = startGsiHttp(token, relay);
+
+    // Phase 2: build hero color-descriptors once at startup for enemy screen-reading. Lazy-loaded
+    // so a native-module (sharp/screenshot-desktop) failure degrades to "no enemy detection" rather
+    // than crashing the app.
+    let templates: Template[] = [];
+    let detectEnemiesFn: ((t: Template[]) => Promise<Array<{ slot: 'enemy'; heroId: number }>>) | null = null;
+    (async () => {
+      try {
+        const [{ loadTemplates }, { detectEnemies }] = await Promise.all([
+          import('./vision/heroes-templates.ts'),
+          import('./vision/capture.ts'),
+        ]);
+        detectEnemiesFn = detectEnemies;
+        templates = await loadTemplates(SITE_URL);
+      } catch { /* vision unavailable — Phase 1 continues without enemy detection */ }
+    })();
+
+    let lastDetect = 0;
+    const maybeReadEnemies = (evt: BridgeSelfEvent) => {
+      // Enemies are only revealed on the strategy screen (all modes share it). Throttle so we don't
+      // screenshot on every heartbeat; the web side diffs, so re-pushing the same lineup is a no-op.
+      if (!detectEnemiesFn || !templates.length) return;
+      if (!evt.gameState || !STRATEGY_STATES.includes(evt.gameState)) return;
+      const now = Date.now();
+      if (now - lastDetect < 4000) return;
+      lastDetect = now;
+      detectEnemiesFn(templates)
+        .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })
+        .catch(() => {});
+    };
+
+    http = startGsiHttp(token, (evt) => { relay(evt); maybeReadEnemies(evt); });
 
     createWindow();
 

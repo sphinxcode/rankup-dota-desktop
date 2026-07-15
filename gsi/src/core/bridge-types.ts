@@ -6,10 +6,15 @@ export type BridgeSelfEvent = {
   kind: 'self';
   heroId: number | null;
   inGame?: boolean;
+  gameState?: string; // raw GSI map.game_state — used by the app to trigger enemy screen-reading
   items?: string[];
   gold?: number;
   clock?: number;
 };
+
+// GSI game_state where all heroes (incl. enemies) are revealed on the strategy screen but the
+// game hasn't started — the window to screen-read the enemy lineup.
+export const STRATEGY_STATES = ['DOTA_GAMERULES_STATE_STRATEGY_TIME', 'DOTA_GAMERULES_STATE_PRE_GAME'];
 
 export type BridgeDraftEvent = {
   kind: 'draft';

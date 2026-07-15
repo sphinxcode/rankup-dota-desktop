@@ -22,6 +22,7 @@ export function normalizeGsi(raw: RawGsi | null | undefined): BridgeSelfEvent {
   const inGame = raw?.map?.game_state === IN_PROGRESS;
 
   const evt: BridgeSelfEvent = { kind: 'self', heroId, inGame };
+  if (typeof raw?.map?.game_state === 'string') evt.gameState = raw.map.game_state;
   if (typeof raw?.player?.gold === 'number') evt.gold = raw.player.gold;
   if (typeof raw?.map?.clock_time === 'number') evt.clock = raw.map.clock_time;
   const items = raw?.items

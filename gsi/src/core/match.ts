@@ -1,63 +1,39 @@
-// Pure perceptual-hash matching core for screen portrait-matching (plan U7). The IO — capturing
-// the screen and decoding PNGs to pixels — lives in the Electron glue (src/main/vision/capture.ts).
-// This module works on plain grayscale pixel arrays, so it is fully unit-testable with synthetic
-// data and has zero native/Electron dependencies.
-//
-// Approach: average-hash (aHash). Downscale a portrait crop to N×N grayscale, then set each bit
-// to 1 where the pixel is >= the mean. Two portraits match when their hashes are within a small
-// Hamming distance. Robust to minor scaling/compression; the reference templates are built from
-// the same canonical hero icons the website uses (data/hero-summary.json CDN images), plus persona
-// variants (each mapped to its base hero id) discovered by the U6 validation spike.
+// Pure portrait-matching core (plan U7). Validated against a real Dota strategy-screen capture:
+// a COLOR descriptor (downsampled RGB + L2 distance) reliably identifies hero portraits, where a
+// grayscale hash did not (heroes are color-distinct). IO — screen capture + image decode/resize —
+// lives in the Electron glue (src/main/vision/*). This module is pure over flat RGB arrays, so it
+// is fully unit-testable with synthetic data and has zero native/Electron deps.
 
-export const HASH_SIDE = 8; // 8×8 → 64-bit hash
+export const DESC_SIDE = 10; // 10×10 RGB descriptor
+export const DESC_LEN = DESC_SIDE * DESC_SIDE * 3;
 
-export type Template = { heroId: number; hash: string };
-export type MatchResult = { heroId: number; confidence: number; distance: number };
+export type Template = { heroId: number; desc: number[] }; // desc length === DESC_LEN
+export type MatchResult = { heroId: number; distance: number };
 
-/**
- * Average-hash a grayscale pixel array already downscaled to `side`×`side`.
- * Returns a bit string of length side*side ('1' where pixel >= mean).
- */
-export function averageHash(gray: number[], side = HASH_SIDE): string {
-  const n = side * side;
-  if (gray.length !== n) throw new Error(`averageHash: expected ${n} pixels, got ${gray.length}`);
-  const mean = gray.reduce((a, b) => a + b, 0) / n;
-  let bits = '';
-  for (let i = 0; i < n; i++) bits += gray[i] >= mean ? '1' : '0';
-  return bits;
-}
-
-/** Hamming distance between two equal-length bit strings. */
-export function hammingDistance(a: string, b: string): number {
-  if (a.length !== b.length) throw new Error('hammingDistance: length mismatch');
+/** Squared-error distance between two equal-length RGB descriptors. */
+export function l2(a: number[], b: number[]): number {
+  if (a.length !== b.length) throw new Error('l2: length mismatch');
   let d = 0;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  for (let i = 0; i < a.length; i++) { const x = a[i] - b[i]; d += x * x; }
   return d;
 }
 
-/** Confidence in [0,1] from a Hamming distance over an n-bit hash. */
-export function confidenceFromDistance(distance: number, bits: number): number {
-  return 1 - distance / bits;
-}
-
 /**
- * Best template match for a portrait hash. Returns null when the closest template is farther
- * than `maxDistance` (prefer a miss over a wrong hero — a wrong enemy poisons coach output).
- * Ties break on the lower heroId for determinism.
+ * Best template match for a portrait descriptor. Returns null when the closest template is
+ * farther than `maxDistance` (prefer a MISS over a wrong hero — a wrong enemy poisons the coach
+ * output, and the user can fill a blank slot manually). Ties break on lower heroId for determinism.
  */
-export function bestMatch(hash: string, templates: Template[], maxDistance = 10): MatchResult | null {
-  const bits = hash.length;
+export function bestMatch(desc: number[], templates: Template[], maxDistance: number): MatchResult | null {
   let best: MatchResult | null = null;
   for (const t of templates) {
-    const distance = hammingDistance(hash, t.hash);
+    const distance = l2(desc, t.desc);
     if (distance > maxDistance) continue;
-    if (
-      !best ||
-      distance < best.distance ||
-      (distance === best.distance && t.heroId < best.heroId)
-    ) {
-      best = { heroId: t.heroId, confidence: confidenceFromDistance(distance, bits), distance };
+    if (!best || distance < best.distance || (distance === best.distance && t.heroId < best.heroId)) {
+      best = { heroId: t.heroId, distance };
     }
   }
   return best;
 }
+
+/** Default confidence cut, tuned from validation: confident correct matches scored well under this. */
+export const DEFAULT_MAX_DISTANCE = 620_000;

@@ -1,76 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { averageHash, hammingDistance, confidenceFromDistance, bestMatch, HASH_SIDE, type Template } from './match.ts';
+import { l2, bestMatch, DESC_LEN, type Template } from './match.ts';
 
-// A 4×4 grayscale block: left half dark, right half bright → predictable aHash.
-const HALF = [
-  0, 0, 200, 200,
-  0, 0, 200, 200,
-  0, 0, 200, 200,
-  0, 0, 200, 200,
-];
+const solid = (r: number, g: number, b: number): number[] => Array.from({ length: DESC_LEN }, (_, i) => [r, g, b][i % 3]);
 
-test('averageHash: sets 1 where pixel >= mean', () => {
-  const h = averageHash(HALF, 4);
-  assert.equal(h, '0011001100110011');
-});
-
-test('averageHash: rejects a pixel array of the wrong length', () => {
-  assert.throws(() => averageHash([1, 2, 3], 4));
-});
-
-test('hammingDistance: counts differing bits', () => {
-  assert.equal(hammingDistance('0000', '0000'), 0);
-  assert.equal(hammingDistance('0000', '1010'), 2);
-  assert.throws(() => hammingDistance('00', '0000'));
-});
-
-test('confidenceFromDistance: 1.0 at distance 0, lower as distance grows', () => {
-  assert.equal(confidenceFromDistance(0, 64), 1);
-  assert.equal(confidenceFromDistance(64, 64), 0);
-  assert.equal(confidenceFromDistance(6, 64), 1 - 6 / 64);
+test('l2: 0 for identical, grows with difference, rejects length mismatch', () => {
+  assert.equal(l2(solid(10, 20, 30), solid(10, 20, 30)), 0);
+  assert.ok(l2(solid(0, 0, 0), solid(10, 0, 0)) > 0);
+  assert.throws(() => l2([1, 2, 3], [1, 2]));
 });
 
 const templates: Template[] = [
-  { heroId: 1, hash: '00000000' },
-  { heroId: 2, hash: '11110000' },
-  { heroId: 3, hash: '11111111' },
+  { heroId: 1, desc: solid(200, 0, 0) },   // red hero
+  { heroId: 2, desc: solid(0, 200, 0) },   // green hero
+  { heroId: 3, desc: solid(0, 0, 200) },   // blue hero
 ];
 
-test('bestMatch: returns the closest template within maxDistance', () => {
-  const r = bestMatch('11110001', templates, 3);
-  assert.ok(r);
-  assert.equal(r!.heroId, 2, 'closest to 11110000 (distance 1)');
-  assert.equal(r!.distance, 1);
+test('bestMatch: picks the nearest template within maxDistance', () => {
+  const r = bestMatch(solid(190, 10, 10), templates, 1_000_000);
+  assert.equal(r!.heroId, 1, 'closest to the red template');
 });
 
 test('bestMatch: returns null when nothing is within maxDistance (prefer a miss)', () => {
-  assert.equal(bestMatch('01010101', templates, 2), null);
+  // a grey portrait is far from every solid primary; tighten the cut so none qualify
+  assert.equal(bestMatch(solid(128, 128, 128), templates, 1_000), null);
 });
 
-test('bestMatch: ties break on the lower heroId for determinism', () => {
+test('bestMatch: ties break on the lower heroId', () => {
   const tied: Template[] = [
-    { heroId: 9, hash: '1100' },
-    { heroId: 4, hash: '0011' },
+    { heroId: 9, desc: solid(100, 0, 0) },
+    { heroId: 4, desc: solid(100, 0, 0) },
   ];
-  const r = bestMatch('1001', tied, 4); // distance 2 to both
-  assert.equal(r!.heroId, 4);
+  assert.equal(bestMatch(solid(100, 0, 0), tied, 10)!.heroId, 4);
 });
 
-test('end-to-end: hash a crop, then match it against a template built from the same icon', () => {
-  const templateHash = averageHash(HALF, 4);
-  const capturedSlightlyNoisy = [
-    5, 0, 190, 210,
-    0, 8, 205, 200,
-    0, 0, 200, 200,
-    2, 0, 200, 195,
-  ];
-  const capturedHash = averageHash(capturedSlightlyNoisy, 4);
-  const r = bestMatch(capturedHash, [{ heroId: 42, hash: templateHash }], 4);
-  assert.equal(r!.heroId, 42, 'noisy re-capture of the same portrait still matches');
-});
-
-test('HASH_SIDE default produces a 64-bit hash', () => {
-  const gray = new Array(HASH_SIDE * HASH_SIDE).fill(0).map((_, i) => (i % 2 ? 255 : 0));
-  assert.equal(averageHash(gray).length, 64);
+test('end-to-end: a noisy re-capture of the same portrait still matches it', () => {
+  const template = solid(180, 40, 60);
+  const noisy = template.map((v, i) => v + (i % 5) - 2); // small per-channel noise
+  const r = bestMatch(noisy, [{ heroId: 42, desc: template }], 620_000);
+  assert.equal(r!.heroId, 42);
 });

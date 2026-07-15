@@ -1,62 +1,59 @@
-// Screen capture + portrait hashing (plan U7 glue). Pure matching lives in ../../core/match.ts;
-// this file does the IO: grab the screen, crop the calibrated draft-board slots, downscale each
-// to grayscale, and hash. Requires `screenshot-desktop` (grab) + `sharp` (crop/resize/grayscale).
-//
-// CROP REGIONS ARE PLACEHOLDERS. They must be filled from the U6 validation spike
-// (scripts/vision-spike.mjs → docs/vision-spike-findings.md) with real per-resolution
-// coordinates before this is trusted. Ship behind the spike's GO decision.
+// Screen capture + enemy portrait reading (plan U7 glue). Pure matching lives in
+// ../../core/match.ts; this file does the IO: grab the screen, crop the 5 enemy portrait slots on
+// the strategy screen, downsample each to a 10×10 RGB descriptor, and match. Requires
+// `screenshot-desktop` (grab) + `sharp` (crop/resize). Everything is guarded so a capture/native
+// failure never crashes the app — it just yields no detections.
 import screenshot from 'screenshot-desktop';
 import sharp from 'sharp';
-import { averageHash, bestMatch, HASH_SIDE, type Template } from '../../core/match.ts';
+import { bestMatch, DESC_SIDE, DEFAULT_MAX_DISTANCE, type Template } from '../../core/match.ts';
 import type { Detection } from '../../core/normalize.ts';
 
-// Normalized [0..1] rectangles relative to screen width/height, per slot index. PLACEHOLDER —
-// replace with U6-calibrated values (likely keyed by aspect ratio). See findings doc.
-export type Rect = { x: number; y: number; w: number; h: number };
-export type SlotRegion = { slot: Detection['slot']; index: number; rect: Rect };
-
-export const PLACEHOLDER_REGIONS: SlotRegion[] = [
-  // e.g. { slot: 'enemy', index: 0, rect: { x: 0.62, y: 0.08, w: 0.05, h: 0.09 } }, ...
-];
+// Enemy portrait slots on the strategy screen, in 1920×1080 pixels (validated against a real
+// capture). The strategy screen is identical across All Pick / Turbo / etc., so one calibration
+// covers all modes. Scaled proportionally for other 16:9 resolutions at runtime.
+const REF_W = 1920, REF_H = 1080;
+const ENEMY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
+  left: 1122 + i * 123, top: 6, width: 98, height: 64,
+}));
 
 /** Grab the primary screen as a PNG buffer. */
 export async function grabScreen(): Promise<Buffer> {
   return screenshot({ format: 'png' });
 }
 
-/** Crop one region from a full-screen PNG and return its average-hash. */
-export async function hashRegion(png: Buffer, rect: Rect, meta: { width: number; height: number }): Promise<string> {
-  const left = Math.round(rect.x * meta.width);
-  const top = Math.round(rect.y * meta.height);
-  const width = Math.round(rect.w * meta.width);
-  const height = Math.round(rect.h * meta.height);
-  const gray = await sharp(png)
-    .extract({ left, top, width, height })
-    .greyscale()
-    .resize(HASH_SIDE, HASH_SIDE, { fit: 'fill' })
+/** Crop a region and return its flattened 10×10 RGB descriptor. */
+export async function regionDescriptor(png: Buffer, rect: { left: number; top: number; width: number; height: number }): Promise<number[]> {
+  const raw = await sharp(png)
+    .extract(rect)
+    .removeAlpha()
+    .resize(DESC_SIDE, DESC_SIDE, { fit: 'fill' })
     .raw()
     .toBuffer();
-  return averageHash(Array.from(gray), HASH_SIDE);
+  return Array.from(raw);
 }
 
 /**
- * Capture the screen once and detect heroes in every calibrated slot.
- * `templates` are the hero/persona reference hashes (built from data/hero-summary.json icons).
+ * Capture the screen once and read the enemy lineup from the strategy-screen top bar.
+ * `templates` are per-hero 10×10 RGB descriptors (built from data/hero-summary.json images).
+ * Returns only confident matches (others are dropped — a blank slot beats a wrong enemy).
  */
-export async function detectDraft(
-  templates: Template[],
-  regions: SlotRegion[] = PLACEHOLDER_REGIONS,
-  maxDistance = 10,
-): Promise<Detection[]> {
-  if (!regions.length) return [];
+export async function detectEnemies(templates: Template[], maxDistance = DEFAULT_MAX_DISTANCE): Promise<Detection[]> {
+  if (!templates.length) return [];
   const png = await grabScreen();
   const meta = await sharp(png).metadata();
-  const dims = { width: meta.width ?? 0, height: meta.height ?? 0 };
+  const sx = (meta.width ?? REF_W) / REF_W;
+  const sy = (meta.height ?? REF_H) / REF_H;
   const out: Detection[] = [];
-  for (const r of regions) {
-    const hash = await hashRegion(png, r.rect, dims);
-    const match = bestMatch(hash, templates, maxDistance);
-    if (match) out.push({ slot: r.slot, heroId: match.heroId });
+  for (const s of ENEMY_SLOTS_1080) {
+    const rect = {
+      left: Math.round(s.left * sx), top: Math.round(s.top * sy),
+      width: Math.round(s.width * sx), height: Math.round(s.height * sy),
+    };
+    try {
+      const desc = await regionDescriptor(png, rect);
+      const m = bestMatch(desc, templates, maxDistance);
+      if (m) out.push({ slot: 'enemy', heroId: m.heroId });
+    } catch { /* skip this slot on any crop/decode error */ }
   }
   return out;
 }
