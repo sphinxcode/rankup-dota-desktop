@@ -86,35 +86,35 @@ if (!app.requestSingleInstanceLock()) {
     // so a native-module (sharp/screenshot-desktop) failure degrades to "no enemy detection" rather
     // than crashing the app.
     let templates: Template[] = [];
-    let detectEnemiesFn: ((t: Template[]) => Promise<Array<{ slot: 'enemy'; heroId: number }>>) | null = null;
+    let detectDraftFn: ((t: Template[]) => Promise<Array<{ slot: 'ally' | 'enemy'; heroId: number }>>) | null = null;
     (async () => {
       try {
-        const [{ loadTemplates }, { detectEnemies }] = await Promise.all([
+        const [{ loadTemplates }, { detectDraft }] = await Promise.all([
           import('./vision/heroes-templates.ts'),
           import('./vision/capture.ts'),
         ]);
-        detectEnemiesFn = detectEnemies;
+        detectDraftFn = detectDraft;
         templates = await loadTemplates(SITE_URL);
-      } catch { /* vision unavailable — Phase 1 continues without enemy detection */ }
+      } catch { /* vision unavailable — Phase 1 continues without draft detection */ }
     })();
 
     let lastDetect = 0;
-    const maybeReadEnemies = (evt: BridgeSelfEvent) => {
-      // Pixel-check continuously across the ENTIRE draft/pre-game window (pick phase → strategy),
-      // so enemies are read the instant they appear on screen, in any mode. Throttled; the web side
-      // diffs, so re-pushing the same lineup (or an empty read while enemies are still hidden) is a
-      // harmless no-op.
-      if (!detectEnemiesFn || !templates.length) return;
+    const maybeReadDraft = (evt: BridgeSelfEvent) => {
+      // Pixel-check continuously across the ENTIRE draft/pre-game window (pick phase → strategy), so
+      // both lineups are read the instant they appear on screen, in any mode. Throttled; the web
+      // side diffs, so re-pushing the same picks (or an empty read while heroes are still hidden) is
+      // a harmless no-op.
+      if (!detectDraftFn || !templates.length) return;
       if (!evt.gameState || !PREGAME_STATES.includes(evt.gameState)) return;
       const now = Date.now();
       if (now - lastDetect < 2500) return;
       lastDetect = now;
-      detectEnemiesFn(templates)
+      detectDraftFn(templates)
         .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })
         .catch(() => {});
     };
 
-    http = startGsiHttp(token, (evt) => { relay(evt); maybeReadEnemies(evt); });
+    http = startGsiHttp(token, (evt) => { relay(evt); maybeReadDraft(evt); });
 
     createWindow();
 

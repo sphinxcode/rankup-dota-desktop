@@ -8,14 +8,18 @@ import sharp from 'sharp';
 import { bestMatch, buildDescriptor, SPATIAL_SIDE, HIST_SIDE, type Template } from '../../core/match.ts';
 import type { Detection } from '../../core/normalize.ts';
 
-// Enemy portrait slots on the strategy screen, in 1920×1080 pixels (refined against a real
-// capture — Warlock/Witch Doctor/Wraith King land with these). The strategy screen is identical
-// across All Pick / Turbo / etc., so one calibration covers all modes. Scaled proportionally for
-// other 16:9 resolutions at runtime.
+// Portrait slots on the strategy-screen top bar, in 1920×1080 pixels — tuned against a real
+// capture to 10/10 (both teams). Your team is the left 5, enemies the right 5; both use a 127px
+// pitch. The strategy screen is identical across All Pick / Turbo / etc., so one calibration
+// covers all modes. Scaled proportionally for other 16:9 resolutions at runtime.
 const REF_W = 1920, REF_H = 1080;
-const ENEMY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
-  left: 1100 + i * 127, top: 4, width: 116, height: 74,
+const ALLY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
+  slot: 'ally' as const, left: 196 + i * 127, top: 2, width: 110, height: 76,
 }));
+const ENEMY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
+  slot: 'enemy' as const, left: 1100 + i * 127, top: 4, width: 116, height: 74,
+}));
+const ALL_SLOTS = [...ALLY_SLOTS_1080, ...ENEMY_SLOTS_1080];
 
 /** Grab the primary screen as a PNG buffer. */
 export async function grabScreen(): Promise<Buffer> {
@@ -33,26 +37,26 @@ export async function regionDescriptor(png: Buffer, rect: { left: number; top: n
 }
 
 /**
- * Capture the screen once and read the enemy lineup from the strategy-screen top bar.
- * `templates` are per-hero 10×10 RGB descriptors (built from data/hero-summary.json images).
- * Returns only confident matches (others are dropped — a blank slot beats a wrong enemy).
+ * Capture the screen once and read BOTH lineups (allies + enemies) from the strategy-screen top
+ * bar. `templates` are per-hero descriptors (built from data/hero-summary.json images). Returns
+ * only confident matches (others are dropped — a blank slot beats a wrong hero).
  */
-export async function detectEnemies(templates: Template[]): Promise<Detection[]> {
+export async function detectDraft(templates: Template[]): Promise<Detection[]> {
   if (!templates.length) return [];
   const png = await grabScreen();
   const meta = await sharp(png).metadata();
   const sx = (meta.width ?? REF_W) / REF_W;
   const sy = (meta.height ?? REF_H) / REF_H;
   const out: Detection[] = [];
-  for (const s of ENEMY_SLOTS_1080) {
+  for (const s of ALL_SLOTS) {
     const rect = {
       left: Math.round(s.left * sx), top: Math.round(s.top * sy),
       width: Math.round(s.width * sx), height: Math.round(s.height * sy),
     };
     try {
       const desc = await regionDescriptor(png, rect);
-      const m = bestMatch(desc, templates); // normalized descriptor + ratio test (defaults)
-      if (m) out.push({ slot: 'enemy', heroId: m.heroId });
+      const m = bestMatch(desc, templates); // spatial+histogram descriptor + ratio test (defaults)
+      if (m) out.push({ slot: s.slot, heroId: m.heroId });
     } catch { /* skip this slot on any crop/decode error */ }
   }
   return out;

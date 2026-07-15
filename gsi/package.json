@@ -1,6 +1,6 @@
 {
   "name": "rankup-dota-desktop-gsi",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Electron companion that reads Dota 2 via official GSI (+ Phase 2 screen portrait-matching) and streams live picks to the Rank Up Dota web app over a local WebSocket.",
   "author": {
