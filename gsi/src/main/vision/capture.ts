@@ -51,7 +51,7 @@ export async function detectDraft(templates: Template[], selfHeroId?: number | n
   const sx = (meta.width ?? REF_W) / REF_W;
   const sy = (meta.height ?? REF_H) / REF_H;
 
-  const raw: Array<{ side: 'left' | 'right'; heroId: number }> = [];
+  const raw: Array<{ side: 'left' | 'right'; heroId: number; distance: number }> = [];
   for (const s of ALL_SLOTS) {
     const rect = {
       left: Math.round(s.left * sx), top: Math.round(s.top * sy),
@@ -60,15 +60,25 @@ export async function detectDraft(templates: Template[], selfHeroId?: number | n
     try {
       const desc = await regionDescriptor(png, rect);
       const m = bestMatch(desc, templates); // spatial+histogram descriptor + ratio test (defaults)
-      if (m) raw.push({ side: s.side, heroId: m.heroId });
+      if (m) raw.push({ side: s.side, heroId: m.heroId, distance: m.distance });
     } catch { /* skip this slot on any crop/decode error */ }
   }
+
+  // Dedup: a hero can't occupy two slots. When two slots match the same hero (a hard portrait like
+  // Windranger colliding with Legion Commander), keep the most confident and blank the other —
+  // better a blank slot than a duplicated wrong hero.
+  const bestPerHero = new Map<number, { side: 'left' | 'right'; heroId: number; distance: number }>();
+  for (const r of raw) {
+    const ex = bestPerHero.get(r.heroId);
+    if (!ex || r.distance < ex.distance) bestPerHero.set(r.heroId, r);
+  }
+  const deduped = [...bestPerHero.values()];
 
   // Anchor the allied side on your own hero (GSI ground truth); default left if not found.
   let allySide: 'left' | 'right' = 'left';
   if (selfHeroId != null) {
-    const mine = raw.find((r) => r.heroId === selfHeroId);
+    const mine = deduped.find((r) => r.heroId === selfHeroId);
     if (mine) allySide = mine.side;
   }
-  return raw.map((r) => ({ slot: r.side === allySide ? 'ally' : 'enemy', heroId: r.heroId }));
+  return deduped.map((r) => ({ slot: r.side === allySide ? 'ally' : 'enemy', heroId: r.heroId }));
 }
