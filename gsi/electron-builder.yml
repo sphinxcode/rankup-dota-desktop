@@ -10,6 +10,10 @@ asarUnpack:
   - node_modules/sharp/**
   - node_modules/@img/**
   - node_modules/screenshot-desktop/**
+# Ship the icon so the tray/window can load it at runtime (resources/icon.png).
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 # Stable asset names matching web/src/components/DownloadModal.tsx (REL + PLATFORMS), so the
 # download modal works unchanged when this ships a release. Single x64 arch keeps one file per OS.
 win:
