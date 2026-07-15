@@ -1,0 +1,71 @@
+# Rank Up Dota — GSI desktop app builder (Electron + electron-builder)
+#
+# Builds the real GSI companion (source under gsi/) for Windows/macOS/Linux and publishes
+# installers with the stable asset names the web app's Download modal links to:
+#   releases/latest/download/RankUpDota-{windows.msi,macos.dmg,linux.deb}
+# Non-destructive: `latest` keeps pointing at the previous release until this run succeeds.
+name: Build GSI Desktop App
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag (e.g. v0.3.0)
+        default: v0.3.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            out: RankUpDota-windows.msi
+          - os: macos-latest
+            out: RankUpDota-macos.dmg
+          - os: ubuntu-24.04
+            out: RankUpDota-linux.deb
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: gsi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Linux packaging deps (deb)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bundle main process (esbuild)
+        run: npm run build:main
+
+      - name: Build installer (electron-builder)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx --no-install electron-builder --publish never
+
+      - name: Verify artifact exists
+        shell: bash
+        run: |
+          if [ ! -f "release/${{ matrix.out }}" ]; then
+            echo "Expected release/${{ matrix.out }} not found. Contents:"; ls -la release || true; exit 1
+          fi
+          echo "Built release/${{ matrix.out }}"
+
+      - name: Publish to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Rank Up Dota ${{ inputs.version }}
+          files: gsi/release/${{ matrix.out }}
+          fail_on_unmatched_files: true
