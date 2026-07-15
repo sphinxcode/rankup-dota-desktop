@@ -47,7 +47,11 @@ function createWindow() {
     backgroundColor: '#0b0f16',
     title: 'Rank Up Dota — Live Coach',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
   });
   win.loadURL(coachUrl());
   // Keep external links (Steam login, socials) in the user's real browser, not this window.
@@ -66,7 +70,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on('ready', () => {
     const install = installGsiConfig(token);
     bridge = startBridgeWs(token);
-    http = startGsiHttp(token, (evt) => bridge?.broadcast(evt));
+    // Relay every GSI/vision event to BOTH transports: WebSocket (external browsers) and IPC to
+    // the in-app window (which cannot use ws://localhost from an https page).
+    const relay = (evt: Parameters<NonNullable<typeof bridge>['broadcast']>[0]) => {
+      bridge?.broadcast(evt);
+      if (win && !win.isDestroyed()) win.webContents.send('bridge-event', evt);
+    };
+    http = startGsiHttp(token, relay);
 
     createWindow();
 

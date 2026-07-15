@@ -1,6 +1,6 @@
 {
   "name": "rankup-dota-desktop-gsi",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Electron companion that reads Dota 2 via official GSI (+ Phase 2 screen portrait-matching) and streams live picks to the Rank Up Dota web app over a local WebSocket.",
   "author": { "name": "Sphinx Code", "email": "developer@sphinx.codes" },
@@ -11,7 +11,7 @@
   "scripts": {
     "test:unit": "node --experimental-strip-types --test src/core/steam-path.test.ts src/core/gsi-cfg.test.ts src/core/normalize.test.ts src/core/match.test.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --outfile=dist/main/index.cjs --external:electron --external:ws --external:sharp --external:screenshot-desktop",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --outfile=dist/main/index.cjs --external:electron --external:ws --external:sharp --external:screenshot-desktop && esbuild src/main/preload.ts --bundle --platform=node --format=cjs --outfile=dist/main/preload.cjs --external:electron",
     "spike:vision": "node scripts/vision-spike.mjs",
     "dev": "npm run build:main && electron .",
     "build": "npm run build:main && electron-builder",
