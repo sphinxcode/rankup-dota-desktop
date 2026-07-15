@@ -4,7 +4,7 @@
 // validated), and downsamples to a 10×10 RGB descriptor. Runs once at app startup; degrades to an
 // empty set (no enemy detection) on any failure.
 import sharp from 'sharp';
-import { DESC_SIDE, normalizeDescriptor, type Template } from '../../core/match.ts';
+import { SPATIAL_SIDE, HIST_SIDE, buildDescriptor, type Template } from '../../core/match.ts';
 
 type ApiHero = { id?: number; image?: string };
 
@@ -17,14 +17,13 @@ async function descriptorFromImage(url: string): Promise<number[] | null> {
     const w = meta.width ?? 0, h = meta.height ?? 0;
     if (!w || !h) return null;
     // Central crop (tuned: 18%–82% width) to match the strategy-screen slot framing, then the same
-    // zero-mean/unit-variance normalization used on the on-screen crop.
-    const raw = await sharp(buf)
-      .extract({ left: Math.round(w * 0.18), top: 0, width: Math.round(w * 0.64), height: h })
-      .removeAlpha()
-      .resize(DESC_SIDE, DESC_SIDE, { fit: 'fill' })
-      .raw()
-      .toBuffer();
-    return normalizeDescriptor(Array.from(raw));
+    // spatial+histogram descriptor used on the on-screen crop.
+    const base = sharp(buf).extract({ left: Math.round(w * 0.18), top: 0, width: Math.round(w * 0.64), height: h }).removeAlpha();
+    const [spatial, hist] = await Promise.all([
+      base.clone().resize(SPATIAL_SIDE, SPATIAL_SIDE, { fit: 'fill' }).raw().toBuffer(),
+      base.clone().resize(HIST_SIDE, HIST_SIDE, { fit: 'fill' }).raw().toBuffer(),
+    ]);
+    return buildDescriptor(Array.from(spatial), Array.from(hist));
   } catch {
     return null;
   }

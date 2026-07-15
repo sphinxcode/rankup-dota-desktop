@@ -5,7 +5,7 @@
 // failure never crashes the app — it just yields no detections.
 import screenshot from 'screenshot-desktop';
 import sharp from 'sharp';
-import { bestMatch, normalizeDescriptor, DESC_SIDE, type Template } from '../../core/match.ts';
+import { bestMatch, buildDescriptor, SPATIAL_SIDE, HIST_SIDE, type Template } from '../../core/match.ts';
 import type { Detection } from '../../core/normalize.ts';
 
 // Enemy portrait slots on the strategy screen, in 1920×1080 pixels (refined against a real
@@ -22,15 +22,14 @@ export async function grabScreen(): Promise<Buffer> {
   return screenshot({ format: 'png' });
 }
 
-/** Crop a region and return its NORMALIZED 12×12 RGB descriptor (matches template normalization). */
+/** Crop a region and return its full descriptor (normalized 12×12 spatial + 4³ color histogram). */
 export async function regionDescriptor(png: Buffer, rect: { left: number; top: number; width: number; height: number }): Promise<number[]> {
-  const raw = await sharp(png)
-    .extract(rect)
-    .removeAlpha()
-    .resize(DESC_SIDE, DESC_SIDE, { fit: 'fill' })
-    .raw()
-    .toBuffer();
-  return normalizeDescriptor(Array.from(raw));
+  const base = sharp(png).extract(rect).removeAlpha();
+  const [spatial, hist] = await Promise.all([
+    base.clone().resize(SPATIAL_SIDE, SPATIAL_SIDE, { fit: 'fill' }).raw().toBuffer(),
+    base.clone().resize(HIST_SIDE, HIST_SIDE, { fit: 'fill' }).raw().toBuffer(),
+  ]);
+  return buildDescriptor(Array.from(spatial), Array.from(hist));
 }
 
 /**
