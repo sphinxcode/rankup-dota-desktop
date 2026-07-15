@@ -1,42 +1,57 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { l2, bestMatch, DESC_LEN, type Template } from './match.ts';
+import { l2, bestMatch, normalizeDescriptor, DESC_LEN, type Template } from './match.ts';
 
-const solid = (r: number, g: number, b: number): number[] => Array.from({ length: DESC_LEN }, (_, i) => [r, g, b][i % 3]);
+// A descriptor with structure (not a flat color, which would normalize to all-zeros).
+const grad = (seed: number): number[] => Array.from({ length: DESC_LEN }, (_, i) => (i * 7 + seed * 13) % 256);
 
-test('l2: 0 for identical, grows with difference, rejects length mismatch', () => {
-  assert.equal(l2(solid(10, 20, 30), solid(10, 20, 30)), 0);
-  assert.ok(l2(solid(0, 0, 0), solid(10, 0, 0)) > 0);
-  assert.throws(() => l2([1, 2, 3], [1, 2]));
+test('normalizeDescriptor: zero mean, unit variance', () => {
+  const v = normalizeDescriptor(grad(1));
+  const mean = v.reduce((a, b) => a + b, 0) / v.length;
+  const std = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
+  assert.ok(Math.abs(mean) < 1e-9, 'mean ~ 0');
+  assert.ok(Math.abs(std - 1) < 1e-9, 'std ~ 1');
 });
 
-const templates: Template[] = [
-  { heroId: 1, desc: solid(200, 0, 0) },   // red hero
-  { heroId: 2, desc: solid(0, 200, 0) },   // green hero
-  { heroId: 3, desc: solid(0, 0, 200) },   // blue hero
-];
-
-test('bestMatch: picks the nearest template within maxDistance', () => {
-  const r = bestMatch(solid(190, 10, 10), templates, 1_000_000);
-  assert.equal(r!.heroId, 1, 'closest to the red template');
+test('normalizeDescriptor: flat input degrades safely (no divide-by-zero)', () => {
+  const v = normalizeDescriptor(Array(DESC_LEN).fill(128));
+  assert.ok(v.every((x) => x === 0));
 });
 
-test('bestMatch: returns null when nothing is within maxDistance (prefer a miss)', () => {
-  // a grey portrait is far from every solid primary; tighten the cut so none qualify
-  assert.equal(bestMatch(solid(128, 128, 128), templates, 1_000), null);
+test('l2: identical=0, grows with difference, rejects length mismatch', () => {
+  const a = normalizeDescriptor(grad(2));
+  assert.equal(l2(a, a), 0);
+  assert.ok(l2(a, normalizeDescriptor(grad(9))) > 0);
+  assert.throws(() => l2([1, 2], [1, 2, 3]));
 });
 
-test('bestMatch: ties break on the lower heroId', () => {
-  const tied: Template[] = [
-    { heroId: 9, desc: solid(100, 0, 0) },
-    { heroId: 4, desc: solid(100, 0, 0) },
-  ];
-  assert.equal(bestMatch(solid(100, 0, 0), tied, 10)!.heroId, 4);
+const T = (id: number, seed: number): Template => ({ heroId: id, desc: normalizeDescriptor(grad(seed)) });
+
+test('bestMatch: returns the clear nearest template', () => {
+  const templates = [T(1, 1), T(2, 50), T(3, 120)];
+  const query = normalizeDescriptor(grad(1).map((x, i) => x + (i % 3))); // tiny noise on seed 1
+  const r = bestMatch(query, templates, { maxDistance: 1e9, ratio: 1 });
+  assert.equal(r!.heroId, 1);
 });
 
-test('end-to-end: a noisy re-capture of the same portrait still matches it', () => {
-  const template = solid(180, 40, 60);
-  const noisy = template.map((v, i) => v + (i % 5) - 2); // small per-channel noise
-  const r = bestMatch(noisy, [{ heroId: 42, desc: template }], 620_000);
-  assert.equal(r!.heroId, 42);
+test('bestMatch: rejects when nothing is within maxDistance', () => {
+  const templates = [T(1, 1), T(2, 50)];
+  assert.equal(bestMatch(normalizeDescriptor(grad(200)), templates, { maxDistance: 1, ratio: 1 }), null);
+});
+
+test('bestMatch: ratio test rejects an ambiguous near-tie (blank beats wrong)', () => {
+  // Two templates almost equally distant from the query → reject.
+  const q = normalizeDescriptor(grad(5));
+  const a = normalizeDescriptor(grad(5).map((x, i) => x + (i % 2 ? 40 : -40)));
+  const b = normalizeDescriptor(grad(5).map((x, i) => x + (i % 2 ? -40 : 40)));
+  const r = bestMatch(q, [{ heroId: 1, desc: a }, { heroId: 2, desc: b }], { maxDistance: 1e9, ratio: 0.82 });
+  assert.equal(r, null, 'near-tie is rejected');
+});
+
+test('bestMatch: accepts a clear winner over a distant runner-up', () => {
+  const q = normalizeDescriptor(grad(5));
+  const near = normalizeDescriptor(grad(5).map((x, i) => x + (i % 5)));  // very close
+  const far = normalizeDescriptor(grad(180));                            // far
+  const r = bestMatch(q, [{ heroId: 7, desc: near }, { heroId: 8, desc: far }], { maxDistance: 1e9, ratio: 0.82 });
+  assert.equal(r!.heroId, 7);
 });

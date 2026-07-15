@@ -5,15 +5,16 @@
 // failure never crashes the app — it just yields no detections.
 import screenshot from 'screenshot-desktop';
 import sharp from 'sharp';
-import { bestMatch, DESC_SIDE, DEFAULT_MAX_DISTANCE, type Template } from '../../core/match.ts';
+import { bestMatch, normalizeDescriptor, DESC_SIDE, type Template } from '../../core/match.ts';
 import type { Detection } from '../../core/normalize.ts';
 
-// Enemy portrait slots on the strategy screen, in 1920×1080 pixels (validated against a real
-// capture). The strategy screen is identical across All Pick / Turbo / etc., so one calibration
-// covers all modes. Scaled proportionally for other 16:9 resolutions at runtime.
+// Enemy portrait slots on the strategy screen, in 1920×1080 pixels (refined against a real
+// capture — Warlock/Witch Doctor/Wraith King land with these). The strategy screen is identical
+// across All Pick / Turbo / etc., so one calibration covers all modes. Scaled proportionally for
+// other 16:9 resolutions at runtime.
 const REF_W = 1920, REF_H = 1080;
 const ENEMY_SLOTS_1080 = Array.from({ length: 5 }, (_, i) => ({
-  left: 1122 + i * 123, top: 6, width: 98, height: 64,
+  left: 1100 + i * 127, top: 4, width: 116, height: 74,
 }));
 
 /** Grab the primary screen as a PNG buffer. */
@@ -21,7 +22,7 @@ export async function grabScreen(): Promise<Buffer> {
   return screenshot({ format: 'png' });
 }
 
-/** Crop a region and return its flattened 10×10 RGB descriptor. */
+/** Crop a region and return its NORMALIZED 12×12 RGB descriptor (matches template normalization). */
 export async function regionDescriptor(png: Buffer, rect: { left: number; top: number; width: number; height: number }): Promise<number[]> {
   const raw = await sharp(png)
     .extract(rect)
@@ -29,7 +30,7 @@ export async function regionDescriptor(png: Buffer, rect: { left: number; top: n
     .resize(DESC_SIDE, DESC_SIDE, { fit: 'fill' })
     .raw()
     .toBuffer();
-  return Array.from(raw);
+  return normalizeDescriptor(Array.from(raw));
 }
 
 /**
@@ -37,7 +38,7 @@ export async function regionDescriptor(png: Buffer, rect: { left: number; top: n
  * `templates` are per-hero 10×10 RGB descriptors (built from data/hero-summary.json images).
  * Returns only confident matches (others are dropped — a blank slot beats a wrong enemy).
  */
-export async function detectEnemies(templates: Template[], maxDistance = DEFAULT_MAX_DISTANCE): Promise<Detection[]> {
+export async function detectEnemies(templates: Template[]): Promise<Detection[]> {
   if (!templates.length) return [];
   const png = await grabScreen();
   const meta = await sharp(png).metadata();
@@ -51,7 +52,7 @@ export async function detectEnemies(templates: Template[], maxDistance = DEFAULT
     };
     try {
       const desc = await regionDescriptor(png, rect);
-      const m = bestMatch(desc, templates, maxDistance);
+      const m = bestMatch(desc, templates); // normalized descriptor + ratio test (defaults)
       if (m) out.push({ slot: 'enemy', heroId: m.heroId });
     } catch { /* skip this slot on any crop/decode error */ }
   }
