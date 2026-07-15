@@ -15,7 +15,7 @@ import { installGsiConfig } from './gsi-cfg-install.ts';
 import { startGsiHttp } from './gsi-http.ts';
 import { startBridgeWs } from './bridge-ws.ts';
 import { normalizeDraft } from '../core/normalize.ts';
-import { STRATEGY_STATES, type BridgeSelfEvent } from '../core/bridge-types.ts';
+import { PREGAME_STATES, type BridgeSelfEvent } from '../core/bridge-types.ts';
 import type { Template } from '../core/match.ts';
 // Vision modules (sharp/screenshot-desktop native deps) are imported LAZILY below so that if those
 // native modules fail to load, Phase 1 (GSI hero detection) keeps working — Phase 2 just no-ops.
@@ -100,12 +100,14 @@ if (!app.requestSingleInstanceLock()) {
 
     let lastDetect = 0;
     const maybeReadEnemies = (evt: BridgeSelfEvent) => {
-      // Enemies are only revealed on the strategy screen (all modes share it). Throttle so we don't
-      // screenshot on every heartbeat; the web side diffs, so re-pushing the same lineup is a no-op.
+      // Pixel-check continuously across the ENTIRE draft/pre-game window (pick phase → strategy),
+      // so enemies are read the instant they appear on screen, in any mode. Throttled; the web side
+      // diffs, so re-pushing the same lineup (or an empty read while enemies are still hidden) is a
+      // harmless no-op.
       if (!detectEnemiesFn || !templates.length) return;
-      if (!evt.gameState || !STRATEGY_STATES.includes(evt.gameState)) return;
+      if (!evt.gameState || !PREGAME_STATES.includes(evt.gameState)) return;
       const now = Date.now();
-      if (now - lastDetect < 4000) return;
+      if (now - lastDetect < 2500) return;
       lastDetect = now;
       detectEnemiesFn(templates)
         .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })

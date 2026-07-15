@@ -12,9 +12,15 @@ export type BridgeSelfEvent = {
   clock?: number;
 };
 
-// GSI game_state where all heroes (incl. enemies) are revealed on the strategy screen but the
-// game hasn't started — the window to screen-read the enemy lineup.
-export const STRATEGY_STATES = ['DOTA_GAMERULES_STATE_STRATEGY_TIME', 'DOTA_GAMERULES_STATE_PRE_GAME'];
+// The entire pre-horn window — pick/ban phase through strategy time. We pixel-check the screen
+// continuously across ALL of these so enemies are read the instant they become visible, whatever
+// the mode: Captain's Mode shows picks live during HERO_SELECTION; All Pick/Turbo only reveal them
+// at STRATEGY_TIME. Checking the whole window covers every mode without special-casing.
+export const PREGAME_STATES = [
+  'DOTA_GAMERULES_STATE_HERO_SELECTION',
+  'DOTA_GAMERULES_STATE_STRATEGY_TIME',
+  'DOTA_GAMERULES_STATE_PRE_GAME',
+];
 
 export type BridgeDraftEvent = {
   kind: 'draft';
