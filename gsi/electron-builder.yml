@@ -16,9 +16,20 @@ extraResources:
     to: icon.png
 # Stable asset names matching web/src/components/DownloadModal.tsx (REL + PLATFORMS), so the
 # download modal works unchanged when this ships a release. Single x64 arch keeps one file per OS.
+# Where electron-updater looks for new versions (must match the repo we publish releases to).
+# electron-builder also emits latest.yml here, which the updater reads — the workflow uploads it.
+publish:
+  provider: github
+  owner: sphinxcode
+  repo: rankup-dota-desktop
 win:
-  target: [{ target: msi, arch: [x64] }]
+  # NSIS, not MSI: electron-updater can only auto-update NSIS builds on Windows.
+  target: [{ target: nsis, arch: [x64] }]
   artifactName: RankUpDota-windows.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
 mac:
   target: [{ target: dmg, arch: [x64] }]
   artifactName: RankUpDota-macos.${ext}

@@ -22,7 +22,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            out: RankUpDota-windows.msi
+            out: RankUpDota-windows.exe
           - os: macos-latest
             out: RankUpDota-macos.dmg
           - os: ubuntu-24.04
@@ -54,6 +54,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx --no-install electron-builder --publish never
 
+      - name: List build output
+        shell: bash
+        run: ls -la release || true
+
       - name: Verify artifact exists
         shell: bash
         run: |
@@ -67,5 +71,7 @@ jobs:
         with:
           tag_name: ${{ inputs.version }}
           name: Rank Up Dota ${{ inputs.version }}
-          files: gsi/release/${{ matrix.out }}
-          fail_on_unmatched_files: true
+          files: |
+            gsi/release/${{ matrix.out }}
+            gsi/release/latest.yml
+          fail_on_unmatched_files: false

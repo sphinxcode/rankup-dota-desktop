@@ -15,6 +15,7 @@ import { installGsiConfig } from './gsi-cfg-install.ts';
 import { startGsiHttp } from './gsi-http.ts';
 import { startBridgeWs } from './bridge-ws.ts';
 import { normalizeDraft } from '../core/normalize.ts';
+import { setupUpdater, checkForUpdatesNow } from './updater.ts';
 import { PREGAME_STATES, type BridgeSelfEvent } from '../core/bridge-types.ts';
 import type { Template } from '../core/match.ts';
 // Vision modules (sharp/screenshot-desktop native deps) are imported LAZILY below so that if those
@@ -130,14 +131,19 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
     tray.setToolTip('Rank Up Dota — Live Coach');
     const rebuildTrayMenu = () => tray?.setContextMenu(Menu.buildFromTemplate([
+      { label: `Rank Up Dota ${app.getVersion()}`, enabled: false },
       { label: install.ok ? 'GSI configured ✓' : `GSI setup: ${install.reason}`, enabled: false },
+      { type: 'separator' },
       { label: 'Open coach window', click: () => createWindow() },
       { label: 'Open coach in external browser', click: () => shell.openExternal(coachUrl()) },
+      { label: 'Check for updates…', click: () => checkForUpdatesNow() },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ]));
     rebuildTrayMenu();
     tray.on('double-click', () => createWindow());
+
+    setupUpdater(); // quiet background check ~2s after launch (packaged Windows only)
   });
 
   // Closing the window quits the app (it's the coach surface). macOS keeps the app alive per convention.
