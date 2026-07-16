@@ -14,7 +14,10 @@
 export const SPATIAL_SIDE = 12;     // 12×12 RGB spatial grid
 export const HIST_SIDE = 24;        // histogram sampled from a 24×24 crop
 export const HIST_BINS = 4;         // 4×4×4 = 64-bin RGB histogram
-export const HIST_WEIGHT = 80;      // tuned balance between spatial structure and color palette
+// CROSS-VALIDATED over 30 labeled heroes across 3 real games (not one screenshot — an earlier
+// single-sample tune scored a meaningless "10/10" and generalized at only ~60%). Sweeping the
+// histogram weight against all 3 games: 40 → 87% at zero offset, 80 → ~77%, 160 → 46%.
+export const HIST_WEIGHT = 40;
 export const SPATIAL_LEN = SPATIAL_SIDE * SPATIAL_SIDE * 3;
 
 export type Template = { heroId: number; desc: number[] };
@@ -62,9 +65,11 @@ export function l2(a: number[], b: number[]): number {
 
 export type MatchOpts = { maxDistance?: number; ratio?: number };
 
-// Tuned on the validation capture: all 5 correct enemies scored ≤731 with ratios ≤0.97.
-export const DEFAULT_MAX_DISTANCE = 780;
-export const DEFAULT_RATIO = 0.97;
+// Cross-validated over 3 games / 30 heroes: correct matches scored 211–583 (ratios ≤0.97), wrong
+// ones 483–566 — they OVERLAP, so no threshold separates them cleanly. This pair is the best
+// precision/recall balance measured: shows 24 correct vs only 2 wrong, blanking the rest.
+export const DEFAULT_MAX_DISTANCE = 600;
+export const DEFAULT_RATIO = 0.94;
 
 /**
  * Best template match for a full descriptor. Returns null unless the closest template is within

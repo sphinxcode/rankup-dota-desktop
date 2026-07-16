@@ -15,8 +15,10 @@ import type { Detection } from '../../core/normalize.ts';
 const REF_W = 1920, REF_H = 1080;
 // Which SIDE is "yours" is not fixed — it depends on Radiant/Dire, so a player can be on the left
 // OR the right. We detect all 10, then use the GSI-known self hero to decide which side is allied.
+// width 116 mirrors the right side (the bar is symmetric about screen centre); an earlier 110 was
+// overfit to a single screenshot and cost accuracy on the left team.
 const LEFT_SLOTS = Array.from({ length: 5 }, (_, i) => ({
-  side: 'left' as const, left: 196 + i * 127, top: 2, width: 110, height: 76,
+  side: 'left' as const, left: 196 + i * 127, top: 2, width: 116, height: 76,
 }));
 const RIGHT_SLOTS = Array.from({ length: 5 }, (_, i) => ({
   side: 'right' as const, left: 1100 + i * 127, top: 4, width: 116, height: 74,

@@ -16,9 +16,9 @@ async function descriptorFromImage(url: string): Promise<number[] | null> {
     const meta = await sharp(buf).metadata();
     const w = meta.width ?? 0, h = meta.height ?? 0;
     if (!w || !h) return null;
-    // Central crop (tuned: 18%–82% width) to match the strategy-screen slot framing, then the same
-    // spatial+histogram descriptor used on the on-screen crop.
-    const base = sharp(buf).extract({ left: Math.round(w * 0.18), top: 0, width: Math.round(w * 0.64), height: h }).removeAlpha();
+    // Central crop — 15%–85% width, cross-validated over 3 games / 30 heroes (0.18–0.82 scored 86%,
+    // 0.25–0.75 only 60%). Then the same spatial+histogram descriptor used on the on-screen crop.
+    const base = sharp(buf).extract({ left: Math.round(w * 0.15), top: 0, width: Math.round(w * 0.70), height: h }).removeAlpha();
     const [spatial, hist] = await Promise.all([
       base.clone().resize(SPATIAL_SIDE, SPATIAL_SIDE, { fit: 'fill' }).raw().toBuffer(),
       base.clone().resize(HIST_SIDE, HIST_SIDE, { fit: 'fill' }).raw().toBuffer(),
