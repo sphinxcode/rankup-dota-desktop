@@ -6,7 +6,7 @@
 import screenshot from 'screenshot-desktop';
 import sharp from 'sharp';
 import { bestMatch, buildDescriptor, SPATIAL_SIDE, HIST_SIDE, type Template } from '../../core/match.ts';
-import type { Detection } from '../../core/normalize.ts';
+import { resolveAllySide, type Detection } from '../../core/normalize.ts';
 
 // Portrait slots on the strategy-screen top bar, in 1920×1080 pixels — tuned against a real
 // capture to 10/10 (both teams). Your team is the left 5, enemies the right 5; both use a 127px
@@ -46,7 +46,11 @@ export async function regionDescriptor(png: Buffer, rect: { left: number; top: n
  * your team; the other side is the enemy. Falls back to left=ally only if your hero isn't matched.
  * `templates` are per-hero descriptors. Returns only confident matches (a blank beats a wrong hero).
  */
-export async function detectDraft(templates: Template[], selfHeroId?: number | null): Promise<Detection[]> {
+export async function detectDraft(
+  templates: Template[],
+  selfHeroId?: number | null,
+  selfTeam?: string | null,
+): Promise<Detection[]> {
   if (!templates.length) return [];
   const png = await grabScreen();
   const meta = await sharp(png).metadata();
@@ -76,11 +80,8 @@ export async function detectDraft(templates: Template[], selfHeroId?: number | n
   }
   const deduped = [...bestPerHero.values()];
 
-  // Anchor the allied side on your own hero (GSI ground truth); default left if not found.
-  let allySide: 'left' | 'right' = 'left';
-  if (selfHeroId != null) {
-    const mine = deduped.find((r) => r.heroId === selfHeroId);
-    if (mine) allySide = mine.side;
-  }
+  // Which side is ours — resolved by the pure, tested resolveAllySide (your hero if we matched it,
+  // else GSI's team_name, which survives personas/arcanas that no template matches).
+  const allySide = resolveAllySide({ detections: deduped, selfHeroId, selfTeam });
   return deduped.map((r) => ({ slot: r.side === allySide ? 'ally' : 'enemy', heroId: r.heroId }));
 }

@@ -8,7 +8,7 @@ const IN_PROGRESS = 'DOTA_GAMERULES_STATE_GAME_IN_PROGRESS';
 
 type RawGsi = {
   map?: { game_state?: string; clock_time?: number } | null;
-  player?: { gold?: number } | null;
+  player?: { gold?: number; team_name?: string } | null;
   hero?: { id?: number; name?: string } | null;
   items?: Record<string, { name?: string }> | null;
 };
@@ -23,6 +23,7 @@ export function normalizeGsi(raw: RawGsi | null | undefined): BridgeSelfEvent {
 
   const evt: BridgeSelfEvent = { kind: 'self', heroId, inGame };
   if (typeof raw?.map?.game_state === 'string') evt.gameState = raw.map.game_state;
+  if (typeof raw?.player?.team_name === 'string') evt.team = raw.player.team_name;
   if (typeof raw?.player?.gold === 'number') evt.gold = raw.player.gold;
   if (typeof raw?.map?.clock_time === 'number') evt.clock = raw.map.clock_time;
   const items = raw?.items
@@ -38,6 +39,32 @@ export function hasSelfHero(raw: RawGsi | null | undefined): boolean {
 }
 
 export type Detection = { slot: 'enemy' | 'ally' | 'ban'; heroId: number };
+
+export type SideDetection = { side: 'left' | 'right'; heroId: number };
+
+/**
+ * Decide which side of the strategy-screen top bar is YOUR team. Two independent signals, strongest
+ * first — this used to rely on vision alone, and a Pudge wearing an alternate persona (which no
+ * template matches) silently inverted both lineups.
+ *   1. Your own hero found among the detections — convention-free ground truth.
+ *   2. GSI's player.team_name — Dota's top bar always renders Radiant left / Dire right, so this
+ *      works even when your hero's portrait is unmatchable (persona, arcana, etc).
+ *   3. Left, as a last resort when GSI gave us neither.
+ */
+export function resolveAllySide(opts: {
+  detections: SideDetection[];
+  selfHeroId?: number | null;
+  selfTeam?: string | null;
+}): 'left' | 'right' {
+  const { detections, selfHeroId, selfTeam } = opts;
+  if (selfHeroId != null) {
+    const mine = detections.find((d) => d.heroId === selfHeroId);
+    if (mine) return mine.side;
+  }
+  if (selfTeam === 'dire') return 'right';
+  if (selfTeam === 'radiant') return 'left';
+  return 'left';
+}
 
 /** Fold vision detections into a `draft` BridgeEvent (Phase 2). */
 export function normalizeDraft(detections: Detection[]): BridgeDraftEvent {

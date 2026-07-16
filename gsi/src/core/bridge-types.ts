@@ -7,6 +7,10 @@ export type BridgeSelfEvent = {
   heroId: number | null;
   inGame?: boolean;
   gameState?: string; // raw GSI map.game_state — used by the app to trigger enemy screen-reading
+  /** GSI player.team_name ('radiant' | 'dire'). Decides which side of the top bar is yours WITHOUT
+   *  depending on vision — a hero wearing an alternate persona won't match its template, which
+   *  silently inverted both teams before this existed. */
+  team?: string;
   items?: string[];
   gold?: number;
   clock?: number;

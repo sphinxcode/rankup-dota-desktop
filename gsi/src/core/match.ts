@@ -65,10 +65,12 @@ export function l2(a: number[], b: number[]): number {
 
 export type MatchOpts = { maxDistance?: number; ratio?: number };
 
-// Cross-validated over 3 games / 30 heroes: correct matches scored 211–583 (ratios ≤0.97), wrong
-// ones 483–566 — they OVERLAP, so no threshold separates them cleanly. This pair is the best
-// precision/recall balance measured: shows 24 correct vs only 2 wrong, blanking the rest.
-export const DEFAULT_MAX_DISTANCE = 600;
+// Cross-validated over 4 games: correct matches score 211–583. Measured separately, EMPTY slots
+// (unpicked heroes during the pick phase, which look like no hero at all) score 596–771 — so 585
+// cleanly rejects them. At 600 exactly one empty slot (596) slipped through and was reported as
+// "Visage", every game, because a dark placeholder's nearest hero is Visage. Wrong-hero matches
+// (483–566) still overlap the correct range and can only be caught by the ratio test.
+export const DEFAULT_MAX_DISTANCE = 585;
 export const DEFAULT_RATIO = 0.94;
 
 /**

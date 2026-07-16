@@ -87,7 +87,7 @@ if (!app.requestSingleInstanceLock()) {
     // so a native-module (sharp/screenshot-desktop) failure degrades to "no enemy detection" rather
     // than crashing the app.
     let templates: Template[] = [];
-    let detectDraftFn: ((t: Template[], selfHeroId?: number | null) => Promise<Array<{ slot: 'ally' | 'enemy'; heroId: number }>>) | null = null;
+    let detectDraftFn: ((t: Template[], selfHeroId?: number | null, selfTeam?: string | null) => Promise<Array<{ slot: 'ally' | 'enemy'; heroId: number }>>) | null = null;
     (async () => {
       try {
         const [{ loadTemplates }, { detectDraft }] = await Promise.all([
@@ -118,7 +118,7 @@ if (!app.requestSingleInstanceLock()) {
       const now = Date.now();
       if (now - lastDetect < 2500) return;
       lastDetect = now; reads++;
-      detectDraftFn(templates, evt.heroId)
+      detectDraftFn(templates, evt.heroId, evt.team)
         .then((dets) => { if (dets.length) relay(normalizeDraft(dets)); })
         .catch(() => {});
     };
