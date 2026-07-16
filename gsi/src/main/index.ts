@@ -8,7 +8,7 @@
 //   4. open a BrowserWindow at <site>/?bridge=<token>; the page's bridge hook connects to the
 //      local WS (loopback is a secure context, so wss-from-https rules don't block it)
 //   5. each normalized GSI tick is relayed to the in-app page → auto-selects your hero
-import { app, BrowserWindow, Tray, Menu, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, nativeImage, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { installGsiConfig } from './gsi-cfg-install.ts';
@@ -57,6 +57,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.cjs'),
+      // Hands the version to the preload without a sync IPC hop. The page uses it to show the
+      // version and to know it is running inside the app (so it hides "Get the app").
+      additionalArguments: [`--rankup-version=${app.getVersion()}`],
     },
   });
   win.loadURL(coachUrl());
@@ -142,6 +145,10 @@ if (!app.requestSingleInstanceLock()) {
     ]));
     rebuildTrayMenu();
     tray.on('double-click', () => createWindow());
+
+    // The in-app sidebar's "Check for updates" item — same handler as the tray, so there is one
+    // update path, not two.
+    ipcMain.on('rankup:check-for-updates', () => checkForUpdatesNow());
 
     setupUpdater(); // quiet background check ~2s after launch (packaged Windows only)
   });
